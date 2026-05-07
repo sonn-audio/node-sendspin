@@ -376,7 +376,11 @@ export class SendspinSession {
     this.roles = activeRoles;
     const playerSupport = payload['player@v1_support'] ?? payload.player_support ?? null;
     const artworkSupport = payload['artwork@v1_support'] ?? payload.artwork_support ?? null;
-    const visualizerSupport = payload['visualizer@v1_support'] ?? payload.visualizer_support ?? null;
+    const visualizerSupport =
+      payload['visualizer@_draft_r1_support'] ??
+      payload['visualizer@v1_support'] ??
+      payload.visualizer_support ??
+      null;
     const sourceSupport = payload['source@v1_support'] ?? payload.source_support ?? null;
     if (this.roles.includes(Roles.PLAYER) && !playerSupport) {
       try {
@@ -612,7 +616,14 @@ export class SendspinSession {
 
   sendStreamClear(roles?: RoleName[]): void {
     if (!this.ready) return;
-    const payload = { roles: roles as any };
+    // Per Sendspin spec, stream/clear only applies to roles that maintain
+    // client-side buffers: player and visualizer. Drop other entries rather
+    // than forwarding an invalid payload that the client would reject.
+    const filtered = roles?.filter((role) => {
+      const family = (typeof role === 'string' ? role : '').split('@')[0];
+      return family === 'player' || family === 'visualizer';
+    });
+    const payload = { roles: filtered as any };
     const message: StreamClearMessage = { type: 'stream/clear', payload };
     this.sendJson(message);
   }

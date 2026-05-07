@@ -393,7 +393,7 @@ export class SendspinClient {
       device_info: this.deviceInfo,
       ['player@v1_support']: this.roles.includes(Roles.PLAYER) ? this.playerSupport : undefined,
       ['artwork@v1_support']: this.roles.includes(Roles.ARTWORK) ? this.artworkSupport : undefined,
-      ['visualizer@v1_support']: this.roles.includes(Roles.VISUALIZER)
+      ['visualizer@_draft_r1_support']: this.roles.includes(Roles.VISUALIZER)
         ? this.visualizerSupport
         : undefined,
       ['source@v1_support']: this.roles.includes(Roles.SOURCE) ? this.sourceSupport : undefined,

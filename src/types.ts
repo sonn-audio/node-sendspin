@@ -9,7 +9,18 @@ export enum Roles {
   CONTROLLER = 'controller@v1',
   METADATA = 'metadata@v1',
   ARTWORK = 'artwork@v1',
-  VISUALIZER = 'visualizer@v1',
+  /**
+   * Visualizer role tracks the upstream Sendspin spec, which still ships the
+   * visualizer role as a draft revision (`visualizer@_draft_r1`). Updating
+   * here keeps role negotiation working with spec-compliant clients
+   * (esphome, sendspin-cli, aiosendspin).
+   */
+  VISUALIZER = 'visualizer@_draft_r1',
+  /**
+   * Vendor extension (Lox-Audioserver only): used to receive line-in audio
+   * from ESPHome devices via SOURCE_AUDIO_CHUNK. Not part of the upstream
+   * Sendspin spec — keep aware of this when bumping protocol versions.
+   */
   SOURCE = 'source@v1',
 }
 
@@ -21,8 +32,10 @@ export enum BinaryMessageType {
   ARTWORK_CHANNEL_1 = 9,
   ARTWORK_CHANNEL_2 = 10,
   ARTWORK_CHANNEL_3 = 11,
+  /** Vendor extension: not in upstream spec. Used for line-in ingest. */
   SOURCE_AUDIO_CHUNK = 12,
   VISUALIZATION_DATA = 16,
+  VISUALIZATION_BEAT = 17,
 }
 
 export enum RepeatMode {
@@ -273,6 +286,9 @@ export interface ClientHelloPayload {
   device_info?: DeviceInfo;
   ['player@v1_support']?: ClientHelloPlayerSupport;
   ['artwork@v1_support']?: ClientHelloArtworkSupport;
+  /** Current spec key: `visualizer@_draft_r1_support`. */
+  ['visualizer@_draft_r1_support']?: ClientHelloVisualizerSupport;
+  /** Legacy compat key for clients still emitting the old `visualizer@v1` role. */
   ['visualizer@v1_support']?: ClientHelloVisualizerSupport;
   ['source@v1_support']?: ClientHelloSourceSupport;
 }

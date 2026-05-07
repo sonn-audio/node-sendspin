@@ -268,7 +268,11 @@ export class ServerClient extends EventEmitter {
 
     const playerSupport = (payload as any)['player@v1_support'] ?? (payload as any).player_support ?? null;
     const artworkSupport = (payload as any)['artwork@v1_support'] ?? (payload as any).artwork_support ?? null;
-    const visualizerSupport = (payload as any)['visualizer@v1_support'] ?? (payload as any).visualizer_support ?? null;
+    const visualizerSupport =
+      (payload as any)['visualizer@_draft_r1_support'] ??
+      (payload as any)['visualizer@v1_support'] ??
+      (payload as any).visualizer_support ??
+      null;
     const sourceSupport = (payload as any)['source@v1_support'] ?? (payload as any).source_support ?? null;
     if (this.activeRoles.includes(Roles.PLAYER) && !playerSupport) {
       this.closeWithReason('missing player support');
