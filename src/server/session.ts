@@ -656,15 +656,25 @@ export class SendspinSession {
   }
 
   sendServerCommand(payload: ServerCommandPayload): void;
-  sendServerCommand(command: PlayerCommand, payload?: { volume?: number; mute?: boolean }): void;
+  sendServerCommand(
+    command: PlayerCommand,
+    payload?: { volume?: number; mute?: boolean; static_delay_ms?: number },
+  ): void;
   sendServerCommand(
     payloadOrCommand: ServerCommandPayload | PlayerCommand,
-    payload?: { volume?: number; mute?: boolean },
+    payload?: { volume?: number; mute?: boolean; static_delay_ms?: number },
   ): void {
     if (!this.ready) return;
     const commandPayload: ServerCommandPayload =
       typeof payloadOrCommand === 'string'
-        ? { player: { command: payloadOrCommand, volume: payload?.volume, mute: payload?.mute } }
+        ? {
+            player: {
+              command: payloadOrCommand,
+              volume: payload?.volume,
+              mute: payload?.mute,
+              static_delay_ms: payload?.static_delay_ms,
+            },
+          }
         : payloadOrCommand;
     const wantsPlayer = !!commandPayload.player;
     const wantsSource = !!commandPayload.source;

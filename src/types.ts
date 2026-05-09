@@ -77,6 +77,7 @@ export enum AudioCodec {
 export enum PlayerCommand {
   VOLUME = 'volume',
   MUTE = 'mute',
+  SET_STATIC_DELAY = 'set_static_delay',
 }
 
 export enum MediaCommand {
@@ -452,6 +453,8 @@ export interface PlayerCommandPayload {
   command: PlayerCommand;
   volume?: number;
   mute?: boolean;
+  /** Static playback delay in milliseconds (0-5000), only valid when command is `set_static_delay`. */
+  static_delay_ms?: number;
 }
 
 export interface ServerCommandPayload {
