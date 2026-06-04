@@ -155,6 +155,10 @@ export class SendspinSession {
   private lastGoodbyeReason: GoodbyeReason | null = null;
 
   private readonly maxBufferedSend = 1024 * 512; // ~512KB backpressure guard
+  // Bumped on stream/clear and stream/end so an audio frame deferred under
+  // backpressure can be dropped if the stream it belonged to was meanwhile
+  // cleared (seek) or ended — mirrors the reference server's epoch invalidation.
+  private streamGeneration = 0;
   private backpressureDrops = 0;
   private lastBackpressureBytes = 0;
   private lastBackpressureTs = 0;
@@ -629,6 +633,7 @@ export class SendspinSession {
     });
     const payload = { roles: filtered as any };
     const message: StreamClearMessage = { type: 'stream/clear', payload };
+    this.streamGeneration += 1;
     this.sendJson(message);
   }
 
@@ -637,6 +642,7 @@ export class SendspinSession {
     const payload = { roles: roles as any };
     const message: StreamEndMessage = { type: 'stream/end', payload };
     this.activeStream = false;
+    this.streamGeneration += 1;
     this.sendJson(message);
   }
 
@@ -645,12 +651,14 @@ export class SendspinSession {
     this.ensureStreamStarted();
     const buffered = this.ws.bufferedAmount;
     if (buffered > this.maxBufferedSend) {
+      const generation = this.streamGeneration;
       setTimeout(() => {
-        if (this.ws.readyState === WebSocket.OPEN) {
-          const ts = frame.timestampUs ?? serverNowUs();
-          const header = packBinaryHeaderRaw(BinaryMessageType.AUDIO_CHUNK, ts);
-          this.sendBinary(Buffer.concat([header, frame.data]));
-        }
+        // Skip if the socket closed or the stream was cleared/ended while this
+        // frame waited — otherwise a stale pre-seek frame would jump the queue.
+        if (this.ws.readyState !== WebSocket.OPEN || this.streamGeneration !== generation) return;
+        const ts = frame.timestampUs ?? serverNowUs();
+        const header = packBinaryHeaderRaw(BinaryMessageType.AUDIO_CHUNK, ts);
+        this.sendBinary(Buffer.concat([header, frame.data]));
       }, 5);
       return;
     }
