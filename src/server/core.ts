@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 
 import {
   ConnectionReason,
+  GoodbyeReason,
   PlaybackStateType,
   ServerCommandPayload,
   SourceSignalType,
@@ -15,6 +16,19 @@ import { SendspinSession, type SendspinSessionHooks, type SendspinPcmFrame, type
 /**
  * Core Sendspin session manager: tracks WebSocket sessions and routes server-driven messages.
  */
+/** Ping every connected socket on this cadence; a socket that doesn't pong
+ *  before the next sweep is considered dead and terminated (so ≈30–60s to
+ *  reap). Mirrors the reference server's aiohttp `heartbeat=30`. Browsers (and
+ *  the node `ws` client) reply to control-frame pings automatically, so a live
+ *  tab stays alive without any client code — only genuinely-dead sockets
+ *  (crashed tab, vanished network, force-quit) fail to pong and get reaped. */
+const HEARTBEAT_INTERVAL_MS = 30000;
+
+/** A stored goodbye reason older than this is treated as stale and ignored, so
+ *  an ancient goodbye can never be mistaken for the reason behind a much later,
+ *  unclean disconnect. The poller consumes it within one cycle (~2s). */
+const GOODBYE_TTL_MS = 10000;
+
 export class SendspinCore {
   private readonly sessionsBySocket = new Map<WebSocket, SendspinSession>();
   private readonly hooksByClientId = new Map<
@@ -25,6 +39,35 @@ export class SendspinCore {
     string,
     { leadUs: number; targetLeadUs: number; bufferedBytes?: number; updatedAt: number }
   >();
+  // Liveness flag per socket; flipped false before each ping, true on pong.
+  private readonly aliveBySocket = new Map<WebSocket, boolean>();
+  // Last goodbye reason per clientId, captured at close so callers can tell an
+  // intentional leave (user_request/shutdown) from a dropped socket afterwards.
+  private readonly recentGoodbyeByClientId = new Map<string, { reason: GoodbyeReason; at: number }>();
+  private readonly heartbeatTimer: ReturnType<typeof setInterval>;
+
+  constructor() {
+    this.heartbeatTimer = setInterval(() => this.sweepHeartbeats(), HEARTBEAT_INTERVAL_MS);
+    // Don't keep the process alive just for the heartbeat.
+    this.heartbeatTimer.unref?.();
+  }
+
+  /** Terminate sockets that didn't pong since the last sweep; ping the rest.
+   *  `terminate()` fires `'close'`, which runs the normal session cleanup. */
+  private sweepHeartbeats(): void {
+    for (const ws of this.sessionsBySocket.keys()) {
+      if (this.aliveBySocket.get(ws) === false) {
+        ws.terminate();
+        continue;
+      }
+      this.aliveBySocket.set(ws, false);
+      try {
+        ws.ping();
+      } catch {
+        // Socket already closing; the next sweep (or 'close') cleans it up.
+      }
+    }
+  }
 
   handleConnection(
     ws: WebSocket,
@@ -38,6 +81,11 @@ export class SendspinCore {
       remote: req?.socket?.remoteAddress ?? null,
     });
     this.sessionsBySocket.set(ws, session);
+    this.aliveBySocket.set(ws, true);
+
+    ws.on('pong', () => {
+      this.aliveBySocket.set(ws, true);
+    });
 
     ws.on('message', (data, isBinary) => {
       if (isBinary) {
@@ -56,6 +104,12 @@ export class SendspinCore {
 
     ws.on('close', () => {
       this.sessionsBySocket.delete(ws);
+      this.aliveBySocket.delete(ws);
+      const clientId = session.getClientId();
+      const reason = session.getLastGoodbyeReason();
+      if (clientId && reason) {
+        this.recentGoodbyeByClientId.set(clientId, { reason, at: Date.now() });
+      }
       session.destroy();
     });
 
@@ -141,6 +195,17 @@ export class SendspinCore {
 
   getSessions(): Iterable<SendspinSession> {
     return this.sessionsBySocket.values();
+  }
+
+  /** Read and clear the goodbye reason a client reported as it last left.
+   *  Returns null if it dropped without a goodbye (unclean disconnect) or the
+   *  recorded reason is stale. Lets callers skip the reconnect grace for an
+   *  intentional `user_request`/`shutdown` leave. */
+  takeGoodbyeReason(clientId: string): GoodbyeReason | null {
+    const entry = this.recentGoodbyeByClientId.get(clientId);
+    if (!entry) return null;
+    this.recentGoodbyeByClientId.delete(clientId);
+    return Date.now() - entry.at <= GOODBYE_TTL_MS ? entry.reason : null;
   }
 
   sendPcmFrameToClient(clientId: string, frame: SendspinPcmFrame): void {

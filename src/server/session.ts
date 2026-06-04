@@ -222,6 +222,10 @@ export class SendspinSession {
     return this.connectionReason;
   }
 
+  getLastGoodbyeReason(): GoodbyeReason | null {
+    return this.lastGoodbyeReason;
+  }
+
   getRemoteAddress(): string | null {
     return this.connectionMeta.remote ?? this.req?.socket?.remoteAddress ?? null;
   }
