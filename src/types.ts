@@ -17,6 +17,12 @@ export enum Roles {
    */
   VISUALIZER = 'visualizer@_draft_r1',
   /**
+   * Outbound-only role: the server pushes a color palette derived from the
+   * current artwork via `server/state`. No client/hello support object is
+   * required — clients simply list `color@v1` in `supported_roles`.
+   */
+  COLOR = 'color@v1',
+  /**
    * Vendor extension (Lox-Audioserver only): used to receive line-in audio
    * from ESPHome devices via SOURCE_AUDIO_CHUNK. Not part of the upstream
    * Sendspin spec — keep aware of this when bumping protocol versions.
@@ -391,9 +397,29 @@ export interface ServerTimeMessage {
   payload: ServerTimePayload;
 }
 
+/** An sRGB color as `[R, G, B]`, each component 0-255. */
+export type Rgb = [number, number, number];
+
+/**
+ * Color object in a `server/state` message (color@v1). Each field is an
+ * `[R, G, B]` tuple, `null` to explicitly clear it, or omitted to leave it
+ * unchanged. The spec mandates WCAG >=4.5:1 contrast for the background/on
+ * pairs; the caller is responsible for honoring that when building the value.
+ */
+export interface SessionUpdateColor {
+  timestamp: number;
+  background_dark?: Rgb | null | UndefinedField;
+  background_light?: Rgb | null | UndefinedField;
+  primary?: Rgb | null | UndefinedField;
+  accent?: Rgb | null | UndefinedField;
+  on_dark?: Rgb | null | UndefinedField;
+  on_light?: Rgb | null | UndefinedField;
+}
+
 export interface ServerStatePayload {
   metadata?: SessionUpdateMetadata;
   controller?: ControllerStatePayload;
+  color?: SessionUpdateColor;
 }
 
 export interface ServerStateMessage {

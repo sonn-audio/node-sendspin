@@ -31,6 +31,7 @@ import {
   ServerHelloMessage,
   ServerHelloPayload,
   ServerStateMessage,
+  SessionUpdateColor,
   ServerTimeMessage,
   StreamClearMessage,
   StreamEndMessage,
@@ -753,6 +754,27 @@ export class SendspinSession {
     this.sendJson(message);
   }
 
+  /**
+   * Push a color@v1 palette via `server/state`. Each field is an `[R, G, B]`
+   * tuple, `null` to clear it, or omitted to leave it unchanged. The caller
+   * owns diffing and the spec's WCAG contrast invariants; `timestamp` is
+   * filled with the current server clock when omitted.
+   */
+  sendColor(color: Omit<SessionUpdateColor, 'timestamp'> & { timestamp?: number }): void {
+    if (!this.ready) return;
+    if (!this.roles.includes(Roles.COLOR)) return;
+    const message: ServerStateMessage = {
+      type: 'server/state',
+      payload: {
+        color: {
+          timestamp: serverNowUs(),
+          ...color,
+        },
+      },
+    };
+    this.sendJson(message);
+  }
+
   sendArtworkStreamStart(
     channels: Array<{ source: 'album' | 'artist' | 'none'; format: 'jpeg' | 'png' | 'bmp'; width: number; height: number }>,
   ): void {
@@ -904,6 +926,7 @@ export class SendspinSession {
       Roles.METADATA,
       Roles.ARTWORK,
       Roles.VISUALIZER,
+      Roles.COLOR,
       Roles.SOURCE,
     ]);
     const activeRoles: RoleName[] = [];

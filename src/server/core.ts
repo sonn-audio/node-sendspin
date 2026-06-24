@@ -268,6 +268,10 @@ export class SendspinCore {
     this.getSession(clientId)?.sendControllerState(payload);
   }
 
+  sendColor(clientId: string, payload: Parameters<SendspinSession['sendColor']>[0]): void {
+    this.getSession(clientId)?.sendColor(payload);
+  }
+
   setClientControllerState(clientId: string, payload: Parameters<SendspinSession['sendControllerState']>[0]): void {
     this.sendControllerState(clientId, payload);
   }
