@@ -17,6 +17,13 @@ export enum Roles {
    */
   VISUALIZER = 'visualizer@_draft_r1',
   /**
+   * Current spec revision of the visualizer role. Uses per-type binary frames
+   * (loudness/f_peak/spectrum/beat/peak/pitch, message types 16-21) rather
+   * than the draft's batched DATA blob. The latest sendspin-cli advertises
+   * only this version and hides its panel unless the server activates it.
+   */
+  VISUALIZER_V1 = 'visualizer@v1',
+  /**
    * Outbound-only role: the server pushes a color palette derived from the
    * current artwork via `server/state`. No client/hello support object is
    * required — clients simply list `color@v1` in `supported_roles`.
@@ -40,8 +47,18 @@ export enum BinaryMessageType {
   ARTWORK_CHANNEL_3 = 11,
   /** Vendor extension: not in upstream spec. Used for line-in ingest. */
   SOURCE_AUDIO_CHUNK = 12,
+  /**
+   * Slot 16 is shared: the legacy `visualizer@_draft_r1` wire sends a batched
+   * DATA blob here, while `visualizer@v1` sends a single loudness frame. The
+   * negotiated role selects the framing, so both names map to byte 16.
+   */
   VISUALIZATION_DATA = 16,
+  VISUALIZATION_LOUDNESS = 16,
   VISUALIZATION_BEAT = 17,
+  VISUALIZATION_F_PEAK = 18,
+  VISUALIZATION_SPECTRUM = 19,
+  VISUALIZATION_PEAK = 20,
+  VISUALIZATION_PITCH = 21,
 }
 
 export enum RepeatMode {
@@ -395,6 +412,33 @@ export interface ServerTimePayload {
 export interface ServerTimeMessage {
   type: 'server/time';
   payload: ServerTimePayload;
+}
+
+export type VisualizerType = 'loudness' | 'f_peak' | 'spectrum' | 'beat' | 'peak' | 'pitch';
+export type SpectrumScale = 'lin' | 'log' | 'mel';
+
+/** Spectrum configuration shared by client/hello support and stream/start. */
+export interface VisualizerSpectrumConfig {
+  n_disp_bins: number;
+  scale: SpectrumScale;
+  f_min: number;
+  f_max: number;
+}
+
+/** Parsed visualizer@v1 support object from client/hello. */
+export interface VisualizerSupport {
+  buffer_capacity: number;
+  rate_max: number;
+  types: VisualizerType[];
+  spectrum?: VisualizerSpectrumConfig;
+}
+
+/** Negotiated visualizer config echoed back in stream/start. */
+export interface VisualizerStreamConfig {
+  types: VisualizerType[];
+  rate_max: number;
+  spectrum?: VisualizerSpectrumConfig;
+  tracks_downbeats?: boolean;
 }
 
 /** An sRGB color as `[R, G, B]`, each component 0-255. */

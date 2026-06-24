@@ -32,6 +32,9 @@ import {
   ServerHelloPayload,
   ServerStateMessage,
   SessionUpdateColor,
+  VisualizerSupport,
+  VisualizerStreamConfig,
+  VisualizerType,
   ServerTimeMessage,
   StreamClearMessage,
   StreamEndMessage,
@@ -43,6 +46,9 @@ import {
   SourceClientCommand,
 } from '../types.js';
 import { serverNowUs } from './clock.js';
+
+const clampU16 = (v: number): number => Math.max(0, Math.min(65535, Math.round(v)));
+const clampU8 = (v: number): number => Math.max(0, Math.min(255, Math.round(v)));
 
 export type SendspinConnectionMeta = {
   zoneId?: number;
@@ -131,6 +137,7 @@ export class SendspinSession {
     width: number;
     height: number;
   }> = [];
+  private visualizerSupport: VisualizerSupport | null = null;
   private expectVolume = false;
   private expectMute = false;
   private warnedMissingVolume = false;
@@ -407,7 +414,10 @@ export class SendspinSession {
       }
       return;
     }
-    if (this.roles.includes(Roles.VISUALIZER) && !visualizerSupport) {
+    if (
+      (this.roles.includes(Roles.VISUALIZER) || this.roles.includes(Roles.VISUALIZER_V1)) &&
+      !visualizerSupport
+    ) {
       try {
         this.ws.close(1008, 'missing visualizer support');
       } catch {
@@ -443,6 +453,9 @@ export class SendspinSession {
         width: typeof c?.media_width === 'number' ? c.media_width : 800,
         height: typeof c?.media_height === 'number' ? c.media_height : 800,
       }));
+    }
+    if (this.roles.includes(Roles.VISUALIZER_V1) && visualizerSupport) {
+      this.visualizerSupport = this.parseVisualizerSupport(visualizerSupport);
     }
     this.initialStateRequired = this.roles.includes(Roles.PLAYER);
     this.applyPreferredStreamFormat();
@@ -825,6 +838,100 @@ export class SendspinSession {
     this.sendBinary(Buffer.concat([header, data]));
   }
 
+  /** Normalize a client/hello visualizer@v1 support object. */
+  private parseVisualizerSupport(raw: any): VisualizerSupport {
+    const allowed: VisualizerType[] = ['loudness', 'f_peak', 'spectrum', 'beat', 'peak', 'pitch'];
+    const types = Array.isArray(raw?.types)
+      ? (raw.types.filter((t: unknown): t is VisualizerType => allowed.includes(t as VisualizerType)) as VisualizerType[])
+      : [];
+    const support: VisualizerSupport = {
+      buffer_capacity: typeof raw?.buffer_capacity === 'number' ? raw.buffer_capacity : 0,
+      rate_max: typeof raw?.rate_max === 'number' ? raw.rate_max : 30,
+      types,
+    };
+    const spectrum = raw?.spectrum;
+    if (spectrum && typeof spectrum === 'object') {
+      support.spectrum = {
+        n_disp_bins: typeof spectrum.n_disp_bins === 'number' ? spectrum.n_disp_bins : 0,
+        scale: spectrum.scale === 'log' || spectrum.scale === 'mel' ? spectrum.scale : 'lin',
+        f_min: typeof spectrum.f_min === 'number' ? spectrum.f_min : 0,
+        f_max: typeof spectrum.f_max === 'number' ? spectrum.f_max : 0,
+      };
+    }
+    return support;
+  }
+
+  /** Visualizer@v1 capabilities the client advertised, or null when not negotiated. */
+  getVisualizerSupport(): VisualizerSupport | null {
+    return this.roles.includes(Roles.VISUALIZER_V1) ? this.visualizerSupport : null;
+  }
+
+  /**
+   * Announce a visualizer@v1 stream. `types` must be a subset of what the
+   * client advertised; the spectrum config is echoed from the client's support.
+   */
+  sendVisualizerStreamStartV1(config: VisualizerStreamConfig): void {
+    if (!this.ready) return;
+    if (!this.roles.includes(Roles.VISUALIZER_V1)) return;
+    const visualizer: Record<string, unknown> = {
+      types: config.types,
+      rate_max: config.rate_max,
+    };
+    if (config.spectrum) visualizer.spectrum = config.spectrum;
+    if (config.tracks_downbeats !== undefined) visualizer.tracks_downbeats = config.tracks_downbeats;
+    this.sendJson({ type: 'stream/start', payload: { visualizer } } as any);
+  }
+
+  /** Send one visualizer@v1 binary frame: `[type:1][ts:8][payload]`. */
+  private sendVisualizerV1(type: BinaryMessageType, payload: Buffer, timestampUs?: number): void {
+    if (!this.ready) return;
+    if (!this.roles.includes(Roles.VISUALIZER_V1)) return;
+    const ts = timestampUs ?? serverNowUs();
+    this.sendBinary(Buffer.concat([packBinaryHeaderRaw(type, ts), payload]), { allowDrop: true });
+  }
+
+  /** Loudness frame (0-65535). */
+  sendVisualizerLoudness(loudness: number, timestampUs?: number): void {
+    const payload = Buffer.alloc(2);
+    payload.writeUInt16BE(clampU16(loudness), 0);
+    this.sendVisualizerV1(BinaryMessageType.VISUALIZATION_LOUDNESS, payload, timestampUs);
+  }
+
+  /** Display-binned spectrum frame: one big-endian u16 per bin. */
+  sendVisualizerSpectrum(bins: ArrayLike<number>, timestampUs?: number): void {
+    const payload = Buffer.alloc(bins.length * 2);
+    for (let i = 0; i < bins.length; i += 1) {
+      payload.writeUInt16BE(clampU16(bins[i]), i * 2);
+    }
+    this.sendVisualizerV1(BinaryMessageType.VISUALIZATION_SPECTRUM, payload, timestampUs);
+  }
+
+  /** Dominant frequency (Hz) + amplitude (0-65535). */
+  sendVisualizerFpeak(freqHz: number, amplitude: number, timestampUs?: number): void {
+    const payload = Buffer.alloc(4);
+    payload.writeUInt16BE(clampU16(freqHz), 0);
+    payload.writeUInt16BE(clampU16(amplitude), 2);
+    this.sendVisualizerV1(BinaryMessageType.VISUALIZATION_F_PEAK, payload, timestampUs);
+  }
+
+  /** Energy onset event with strength (0-255). */
+  sendVisualizerPeak(strength: number, timestampUs?: number): void {
+    this.sendVisualizerV1(BinaryMessageType.VISUALIZATION_PEAK, Buffer.from([clampU8(strength)]), timestampUs);
+  }
+
+  /** Perceived pitch as MIDI 8.8 fixed-point + confidence (0-255). */
+  sendVisualizerPitch(midiQ88: number, confidence: number, timestampUs?: number): void {
+    const payload = Buffer.alloc(3);
+    payload.writeUInt16BE(clampU16(midiQ88), 0);
+    payload.writeUInt8(clampU8(confidence), 2);
+    this.sendVisualizerV1(BinaryMessageType.VISUALIZATION_PITCH, payload, timestampUs);
+  }
+
+  /** Musical beat event. `downbeat` sets the low flag bit. */
+  sendVisualizerBeat(downbeat = false, timestampUs?: number): void {
+    this.sendVisualizerV1(BinaryMessageType.VISUALIZATION_BEAT, Buffer.from([downbeat ? 0b1 : 0b0]), timestampUs);
+  }
+
   private applyPlayerFormatRequest(request: StreamRequestFormatPayload['player']): void {
     if (!request) return;
     const codec = this.normalizeCodec(request.codec);
@@ -925,6 +1032,7 @@ export class SendspinSession {
       Roles.CONTROLLER,
       Roles.METADATA,
       Roles.ARTWORK,
+      Roles.VISUALIZER_V1,
       Roles.VISUALIZER,
       Roles.COLOR,
       Roles.SOURCE,

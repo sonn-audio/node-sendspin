@@ -264,6 +264,42 @@ export class SendspinCore {
     this.getSession(clientId)?.sendVisualizerFrame(data, timestampUs);
   }
 
+  // visualizer@v1 (per-type frames).
+  getVisualizerSupport(clientId: string): ReturnType<SendspinSession['getVisualizerSupport']> | null {
+    return this.getSession(clientId)?.getVisualizerSupport() ?? null;
+  }
+
+  sendVisualizerStreamStartV1(
+    clientId: string,
+    config: Parameters<SendspinSession['sendVisualizerStreamStartV1']>[0],
+  ): void {
+    this.getSession(clientId)?.sendVisualizerStreamStartV1(config);
+  }
+
+  sendVisualizerLoudness(clientId: string, loudness: number, timestampUs?: number): void {
+    this.getSession(clientId)?.sendVisualizerLoudness(loudness, timestampUs);
+  }
+
+  sendVisualizerSpectrum(clientId: string, bins: ArrayLike<number>, timestampUs?: number): void {
+    this.getSession(clientId)?.sendVisualizerSpectrum(bins, timestampUs);
+  }
+
+  sendVisualizerFpeak(clientId: string, freqHz: number, amplitude: number, timestampUs?: number): void {
+    this.getSession(clientId)?.sendVisualizerFpeak(freqHz, amplitude, timestampUs);
+  }
+
+  sendVisualizerPeak(clientId: string, strength: number, timestampUs?: number): void {
+    this.getSession(clientId)?.sendVisualizerPeak(strength, timestampUs);
+  }
+
+  sendVisualizerPitch(clientId: string, midiQ88: number, confidence: number, timestampUs?: number): void {
+    this.getSession(clientId)?.sendVisualizerPitch(midiQ88, confidence, timestampUs);
+  }
+
+  sendVisualizerBeat(clientId: string, downbeat?: boolean, timestampUs?: number): void {
+    this.getSession(clientId)?.sendVisualizerBeat(downbeat, timestampUs);
+  }
+
   sendControllerState(clientId: string, payload: Parameters<SendspinSession['sendControllerState']>[0]): void {
     this.getSession(clientId)?.sendControllerState(payload);
   }
