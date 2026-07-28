@@ -11,6 +11,7 @@ import {
   ClientStateMessage,
   ClientStateType,
   ClientHelloSourceSupport,
+  SupportedAudioFormat,
   SourceControl,
   SourceFormat,
   SourceStatePayload,
@@ -280,6 +281,28 @@ export class SendspinSession {
   getPlayerBufferCapacity(): number {
     const cap = this.playerSupport?.buffer_capacity;
     return typeof cap === 'number' && cap > 0 ? cap : 0;
+  }
+
+  /**
+   * The player's declared format list from client/hello, in the client's own
+   * priority order (first entry = preferred).
+   *
+   * Hosts need the whole list, not just the preferred entry, to pick a format that
+   * matches the *source* instead of always taking entry 0 — e.g. streaming a
+   * 24-bit/96 kHz file untouched to a client that happens to list 48 kHz first,
+   * but only when that client also declared 96 kHz support.
+   *
+   * Returns copies so callers cannot mutate session state, and an empty array when
+   * the client declared nothing.
+   */
+  getPlayerSupportedFormats(): SupportedAudioFormat[] {
+    const formats = this.playerSupport?.supported_formats;
+    if (!Array.isArray(formats)) {
+      return [];
+    }
+    return formats
+      .filter((fmt: unknown): fmt is SupportedAudioFormat => Boolean(fmt))
+      .map((fmt: SupportedAudioFormat) => ({ ...fmt }));
   }
 
   getArtworkChannels(): SendspinSession['artworkChannels'] {
