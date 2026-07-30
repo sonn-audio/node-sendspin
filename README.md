@@ -1,11 +1,11 @@
 # node-sendspin
 
-TypeScript/Node.js implementation of the Sendspin protocol. It exposes both client and server building blocks and is primarily used by lox-audioserver, but is generic enough for other Sendspin deployments.
+TypeScript/Node.js implementation of the Sendspin protocol. It exposes both client and server building blocks and is primarily used by Sonn core, but is generic enough for other Sendspin deployments.
 
 ## Install
 
 ```sh
-npm install @lox-audioserver/node-sendspin
+npm install @sonn-audio/node-sendspin
 ```
 
 ## Quickstart
@@ -16,7 +16,7 @@ import {
   Roles,
   AudioCodec,
   MediaCommand,
-} from '@lox-audioserver/node-sendspin';
+} from '@sonn-audio/node-sendspin';
 
 const client = new SendspinClient('my-client-id', 'My Player', [Roles.PLAYER], {
   playerSupport: {
@@ -44,7 +44,7 @@ await client.sendGroupCommand(MediaCommand.PLAY);
 ### Simple server
 
 ```ts
-import { SendspinServer } from '@lox-audioserver/node-sendspin';
+import { SendspinServer } from '@sonn-audio/node-sendspin';
 
 const server = new SendspinServer('server-id', 'My Sendspin Server');
 server.on('client-added', (evt) => console.log('client connected', evt.clientId));
