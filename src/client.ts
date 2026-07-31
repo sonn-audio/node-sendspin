@@ -354,16 +354,33 @@ export class SendspinClient {
     return this.timeFilter.isSynchronized;
   }
 
+  /**
+   * When to submit a frame to the audio device, on this client's own clock.
+   *
+   * `staticDelayUs` is **subtracted**, which is the opposite of what the name suggests and is what
+   * the spec requires: "Clients must translate this server timestamp to their local clock using the
+   * offset computed from clock synchronization, subtracting their `static_delay_ms` from the
+   * timestamp." The value is not an offset that moves playback later — it describes delay that
+   * happens *after* the audio port (an amplifier, an active speaker), so playing that much earlier
+   * is what makes the sound land on the timestamp.
+   *
+   * This used to add it, so a positive value played *late* by twice the intended amount relative to
+   * a compliant peer: setting 200 ms to bring a lagging room forward pushed it 200 ms further back
+   * instead, and two clients built on different libraries moved in opposite directions on the same
+   * `set_static_delay`. Verified against the spec (roles/player/v1 timing rules) and against
+   * aiosendspin, which subtracts here and adds in `computeServerTime`.
+   */
   computePlayTime(serverTimestampUs: number): number {
     if (this.timeFilter.isSynchronized) {
       const clientTime = this.timeFilter.computeClientTime(serverTimestampUs);
-      return clientTime + this.staticDelayUs;
+      return clientTime - this.staticDelayUs;
     }
-    return this.nowUs() + 500_000 + this.staticDelayUs;
+    return this.nowUs() + 500_000 - this.staticDelayUs;
   }
 
+  /** The inverse of computePlayTime: add the static delay back before converting to server time. */
   computeServerTime(clientTimestampUs: number): number {
-    const adjusted = clientTimestampUs - this.staticDelayUs;
+    const adjusted = clientTimestampUs + this.staticDelayUs;
     return this.timeFilter.computeServerTime(adjusted);
   }
 

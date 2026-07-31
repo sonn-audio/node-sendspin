@@ -79,6 +79,18 @@ export interface SendspinPlayerStateUpdate {
   state?: ClientStateType;
   volume?: number;
   muted?: boolean;
+  /**
+   * The player's own timing declarations, as last reported.
+   *
+   * Absent from an update means the client did not restate them, not that they changed — per the
+   * spec's delta rules a player may omit anything unchanged after its initial message. So these
+   * carry the session's *current* view rather than only what this message contained, which is what a
+   * server needs: it has to factor `staticDelayMs` into how far ahead it sends on every stream, not
+   * only on the one that happened to follow a full state report.
+   */
+  staticDelayMs?: number;
+  requiredLeadTimeMs?: number;
+  minBufferMs?: number;
 }
 
 export interface SendspinGroupCommand {
@@ -144,6 +156,10 @@ export class SendspinSession {
   private warnedMissingVolume = false;
   private warnedMissingMute = false;
   private initialStateReceived = false;
+  /** Last reported player timing (see SendspinPlayerStateUpdate); undefined until the client says. */
+  private staticDelayMs: number | undefined;
+  private requiredLeadTimeMs: number | undefined;
+  private minBufferMs: number | undefined;
   private initialStateTimer: NodeJS.Timeout | null = null;
   private initialStateRequired = false;
   private identified = false;
@@ -199,6 +215,25 @@ export class SendspinSession {
 
   getClientId(): string | null {
     return this.clientId;
+  }
+
+  /**
+   * The player's timing declarations, or undefined for each the client has not reported.
+   *
+   * Read this at stream start: `staticDelayMs` must be added to the send-ahead, and the two lead
+   * hints shape the first chunk's timestamp. Waiting for the next `client/state` would mean a stream
+   * that begins before one arrives is scheduled as if the client had declared nothing.
+   */
+  getPlayerTiming(): {
+    staticDelayMs: number | undefined;
+    requiredLeadTimeMs: number | undefined;
+    minBufferMs: number | undefined;
+  } {
+    return {
+      staticDelayMs: this.staticDelayMs,
+      requiredLeadTimeMs: this.requiredLeadTimeMs,
+      minBufferMs: this.minBufferMs,
+    };
   }
 
   getClientName(): string | null {
@@ -522,12 +557,32 @@ export class SendspinSession {
         : typeof payload.player?.state === 'string'
           ? (payload.player.state as ClientStateType)
           : undefined;
+    /*
+     * Remember the timing fields rather than passing this message's copy through.
+     *
+     * They are REQUIRED in a player's initial state and omitted from later updates when unchanged,
+     * so reading them off each message alone means a volume change silently reports "no static
+     * delay". They were dropped entirely before this: a server had no way to learn a value the spec
+     * requires it to account for, and the one thing that made it visible was audio arriving early.
+     */
+    if (typeof payload.player?.static_delay_ms === 'number') {
+      this.staticDelayMs = payload.player.static_delay_ms;
+    }
+    if (typeof payload.player?.required_lead_time_ms === 'number') {
+      this.requiredLeadTimeMs = payload.player.required_lead_time_ms;
+    }
+    if (typeof payload.player?.min_buffer_ms === 'number') {
+      this.minBufferMs = payload.player.min_buffer_ms;
+    }
     const update: SendspinPlayerStateUpdate = {
       clientId: this.clientId,
       roles,
       state,
       volume: payload.player?.volume,
       muted: payload.player?.muted,
+      staticDelayMs: this.staticDelayMs,
+      requiredLeadTimeMs: this.requiredLeadTimeMs,
+      minBufferMs: this.minBufferMs,
     };
     if (this.expectVolume && update.volume === undefined && !this.warnedMissingVolume) {
       this.warnedMissingVolume = true;

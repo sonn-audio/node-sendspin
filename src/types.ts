@@ -335,6 +335,33 @@ export interface PlayerStatePayload {
   state?: ClientStateType;
   volume?: number;
   muted?: boolean;
+  /**
+   * Static delay in milliseconds (0-5000). REQUIRED for players in the initial state message.
+   *
+   * The delay the client's own chain adds *after* its audio port — an amplifier, an active speaker.
+   * The client subtracts it from every timestamp, so a server must add it to how far ahead it sends
+   * or the setting is paid for out of the buffer instead (spec: "Servers factor in each client's
+   * static_delay_ms when calculating how far ahead to send audio, keeping effective buffer headroom
+   * constant"). The client owns and persists this value; `set_static_delay` only asks.
+   */
+  static_delay_ms?: number;
+  /**
+   * Minimum startup lead time in milliseconds (0-30000). REQUIRED for players initially.
+   *
+   * Codec init, decode warmup, backend buffering, DAC latency — measured from the server transmit
+   * time of the start trigger to the playback timestamp of the first chunk that can play in full.
+   * A hint: the server MAY give less. Excludes `static_delay_ms`.
+   */
+  required_lead_time_ms?: number;
+  /**
+   * Requested minimum ongoing buffer during playback, in milliseconds (0-30000). REQUIRED initially.
+   *
+   * Absorbs network jitter and decode variance, mainly for live streams. Excludes
+   * `static_delay_ms`.
+   */
+  min_buffer_ms?: number;
+  /** Subset of 'set_static_delay': which of these the client will accept from the server. */
+  supported_commands?: PlayerCommand[];
 }
 
 export interface SourceStatePayload {
